@@ -5,10 +5,14 @@ import {SelfVerificationRoot} from "@self/contracts/abstract/SelfVerificationRoo
 import {IVcAndDiscloseCircuitVerifier} from "@self/contracts/interfaces/IVcAndDiscloseCircuitVerifier.sol";
 import {IIdentityVerificationHubV1} from "@self/contracts/interfaces/IIdentityVerificationHubV1.sol";
 import {CircuitConstants} from "@self/contracts/constants/CircuitConstants.sol";
+import {Formatter} from "@self/contracts/libraries/Formatter.sol";
+import {CircuitAttributeHandler} from "@self/contracts/libraries/CircuitAttributeHandler.sol";
 
 contract SelfAirdrop is SelfVerificationRoot {
     mapping(uint256 => uint256) internal _nullifiers;
     mapping(uint256 => bool) internal _registeredUserIdentifiers;
+    mapping(address user => uint256 claimableTimestamp)
+        public s_claimableTimestamp;
 
     error RegisteredNullifier();
     error InvalidUserIdentifier();
@@ -100,11 +104,52 @@ contract SelfAirdrop is SelfVerificationRoot {
             ]
         ] = true;
 
+        updateClaimableTimestamp(result.revealedDataPacked);
+
         emit UserIdentifierRegistered(
             proof.pubSignals[
                 CircuitConstants.VC_AND_DISCLOSE_USER_IDENTIFIER_INDEX
             ],
             result.nullifier
         );
+    }
+
+    function updateClaimableTimestamp(
+        uint256[3] memory revealedDataPacked
+    ) internal {
+        bytes memory charcodes = Formatter.fieldElementsToBytes(
+            revealedDataPacked
+        );
+        string memory expiryDate = CircuitAttributeHandler.getExpiryDate(
+            charcodes
+        );
+
+        bytes memory expiryBytes = bytes(expiryDate);
+        bytes memory dayBytes = new bytes(2);
+        bytes memory monthBytes = new bytes(2);
+        bytes memory yearBytes = new bytes(2);
+
+        dayBytes[0] = expiryBytes[0];
+        dayBytes[1] = expiryBytes[1];
+
+        monthBytes[0] = expiryBytes[3];
+        monthBytes[1] = expiryBytes[4];
+
+        yearBytes[0] = expiryBytes[5];
+        yearBytes[1] = expiryBytes[6];
+
+        string memory day = string(dayBytes);
+        string memory month = string(monthBytes);
+        string memory year = string(yearBytes);
+
+        string memory expiryDateString = string(
+            abi.encodePacked(year, month, day)
+        );
+
+        uint256 expiryDateTimestamp = Formatter.dateToUnixTimestamp(
+            expiryDateString
+        );
+
+        s_claimableTimestamp[msg.sender] = expiryDateTimestamp;
     }
 }
